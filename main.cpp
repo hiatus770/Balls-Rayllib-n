@@ -1,13 +1,14 @@
 #include <iostream>
 #include <cmath>
 #include <raylib.h>
+#include <raymath.h>
 #include <vector>
 #include <array>
 #define WIDTHGAME 30
 #define HEIGHTGAME 30
 #define toDegree(x) (x * 180.0 / 3.14159)
 #define toRadian(x) (x * 3.14159 / 180.0)
-#define gameFPS 100
+#define gameFPS 500
 #define getDecimal(x) (x - (int)x)
 #define sgn(x) (x < 0 ? -1 : 1)
 
@@ -26,117 +27,162 @@ const int maxHeight = screenHeight;
 const int minWidth = 0;
 const int minHeight = 0;
 
-int colorCounter = 0; 
+int colorCounter = 0;
+
+// Define some operators for vector2 that are missing such as + - * /
+Vector2 operator+(const Vector2 &v1, const Vector2 &v2)
+{
+    return {v1.x + v2.x, v1.y + v2.y};
+}
+Vector2 operator-(const Vector2 &v1, const Vector2 &v2)
+{
+    return {v1.x - v2.x, v1.y - v2.y};
+}
+Vector2 operator*(const Vector2 &v1, const Vector2 &v2)
+{
+    return {v1.x * v2.x, v1.y * v2.y};
+}
+Vector2 operator/(const Vector2 &v1, const Vector2 &v2)
+{
+    return {v1.x / v2.x, v1.y / v2.y};
+}
+Vector2 operator*(const Vector2 &v1, const double &v2)
+{
+    return {v1.x * v2, v1.y * v2};
+}
+Vector2 operator/(const Vector2 &v1, const double &v2)
+{
+    return {v1.x / v2, v1.y / v2};
+}
+
+class QuadTree;
 
 class Ball
 {
 public:
-    float x, y, velX, velY, pastX, pastY, radius;
+    Vector2 position;
+    Vector2 lastPosition;
+    Vector2 velocity;
+    Vector2 acceleration = {0, 0.1};
+    float radius;
     Color col = RED;
 
-    Ball(float xPos, float yPos, float xvelX, float yvelY, float r)
+    Ball(float x, float y, float radius)
     {
-        x = xPos;
-        y = yPos;
-        radius = r;
-        velX = xvelX;
-        velY = yvelY;
-        pastX = x - velX;
-        pastY = y - velY;
-        col = ColorFromHSV(sin(colorCounter/10)*135/2 + 180, 1.0f, 1.0f); 
+        this->position.x = x;
+        this->position.y = y;
+        this->radius = radius;
+        this->velocity.x = 0;
+        this->velocity.y = 0;
+        this->lastPosition.x = x;
+        this->lastPosition.y = y;
+    };
+
+    Ball(float x, float y, Vector2 vel, float radius)
+    {
+        this->position.x = x;
+        this->position.y = y;
+        this->radius = radius;
+        this->velocity = vel;
+        this->lastPosition.x = x - vel.x;
+        this->lastPosition.y = y - vel.y;
+    };
+
+    void update(float dt)
+    {
+        // Using dt
+        Vector2 displacement = Vector2Subtract(position, lastPosition);
+        lastPosition = position;
+        position = position + displacement * dragCoef + acceleration * dt * dt;
+
+        // Vector2 displacement = Vector2Subtract(position, lastPosition);
+        // lastPosition = position;
+        // position = position + displacement*dragCoef + acceleration;
     }
 
     void bounds()
     {
-        if (x > (maxWidth - radius))
+        getVelocity();
+        if (position.x + radius > maxWidth)
         {
-            x = maxWidth - radius;
-            // velX += sgn(velX)*0.1;
-            pastX = x + velX * elasticCoef;
+            position.x = maxWidth - radius;
+            lastPosition.x = position.x + velocity.x;
         }
-        else if (x < radius + minWidth)
+        if (position.x - radius < minWidth)
         {
-            x = radius + minWidth;
-            // velX += sgn(velX)*0.1;
-            pastX = x + velX * elasticCoef;
+            position.x = minWidth + radius;
+            lastPosition.x = position.x + velocity.x;
         }
-        if (y > (maxHeight - radius))
+        if (position.y + radius > maxHeight)
         {
-            y = maxHeight - radius;
-            // velY += sgn(velY)*0.2;
-            pastY = y + velY * elasticCoef;
+            position.y = maxHeight - radius;
+            lastPosition.y = position.y + velocity.y;
         }
-        else if (y < radius + minHeight)
+        if (position.y - radius < minHeight)
         {
-            y = minHeight + radius;
-            // velY += sgn(velY)*0.2;
-            pastY = y + velY * elasticCoef;
+            position.y = minHeight + radius;
+            lastPosition.y = position.y + velocity.y;
         }
+    }
+
+    void draw()
+    {
+        DrawCircle(position.x, position.y, radius, col);
     }
 
     void collision();
 
-    void draw()
+    void setVelocity(Vector2 v)
     {
-        DrawCircle((int)x, (int)y, radius, col);
+        lastPosition = position - v;
     }
 
-    void update()
+    void getVelocity()
     {
-        collision(); 
-        bounds(); 
-        float tempX = x;
-        float tempY = y;
-        velX = (x - pastX) * dragCoef;
-        velY = (y - pastY) * dragCoef + gravCoef;
-        for (int i = 0; i < iterAmount; i++)
-        {
-            x += velX * (1 / iterAmount);
-            y += velY * (1 / iterAmount);
-        }
-
-        pastX = tempX;
-        pastY = tempY;
+        velocity = position - lastPosition;
     }
 };
 
 vector<Ball> globalBalls;
 
+
 void Ball::collision()
 {
-
-    for (int i = 0; i < globalBalls.size(); i++)
+    // Use space partitioning to find the balls that are close to this ball
+    for (int i = 0; i < (int)globalBalls.size(); i++)
     {
         Ball *b = &globalBalls.at(i);
         if (b != this)
         {
-
-            float length = sqrtf((b->x - x) * (b->x - x) + (b->y - y) * (b->y - y));
+            float length = sqrtf((b->position.x - position.x) * (b->position.x - position.x) + (b->position.y - position.y) * (b->position.y - position.y));
             if (b->radius + radius > length && length != 0)
             {
                 float overlap = b->radius + radius - length;
                 if (overlap > 0)
                 {
-                    float dx; float dy; float ang; 
-                    if (x - b->x == 0){
-                        dx = 0; 
-                        dy = overlap/2;   
-                    } else {
-                        ang = atan((y - b->y) / (x - b->x));
+                    float dx;
+                    float dy;
+                    float ang;
+                    if (position.x - b->position.x == 0)
+                    {
+                        dx = 0;
+                        dy = overlap / 2;
+                    }
+                    else
+                    {
+                        ang = atan((position.y - b->position.y) / (position.x - b->position.x));
                         dx = abs(cos(ang) * overlap / 2);
                         dy = abs(sin(ang) * overlap / 2);
-                    }  
-                    x += -1*sgn(b->x - x)*dx;
-                    y += -1*sgn(b->y- y)*dy; 
-                    b->x += sgn(b->x - x)*dx; 
-                    b->y += sgn(b->y - y)*dy; 
+                    }
+                    position.x += -1 * sgn(b->position.x - position.x) * dx;
+                    position.y += -1 * sgn(b->position.y - position.y) * dy;
+                    b->position.x += sgn(b->position.x - position.x) * dx;
+                    b->position.y += sgn(b->position.y - position.y) * dy;
                 }
             }
         }
     }
 }
-
-
 
 // Main function
 int main()
@@ -147,16 +193,12 @@ int main()
 
     float lastTime = 0;
 
+    // test ball
+
     while (WindowShouldClose() == false)
     {
         BeginDrawing();
         ClearBackground(BLACK);
-        colorCounter = globalBalls.size(); 
-
-        if (IsMouseButtonDown(0) && globalBalls.size() < 200 && GetTime() - lastTime > 0.05)
-        {
-            globalBalls.push_back(Ball(100, 100, 0, 7, 10));
-        }
 
         for (int i = 0; i < (int)globalBalls.size(); i++)
         {
@@ -164,15 +206,36 @@ int main()
             b->draw();
         }
 
-        if (GetTime() - lastTime > 0.05)
+        // add balls on mouse press
+        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && GetTime() - lastTime > 0.01)
+        {
+            Vector2 mousePos = GetMousePosition();
+            // with velocity of the mouse delta
+            globalBalls.push_back(Ball(mousePos.x, mousePos.y, GetMouseDelta(), 10));
+        }
+
+        if (GetTime() - lastTime > 0.01)
         {
             lastTime = GetTime();
-            for (int i = 0; i < globalBalls.size(); i++)
+            float dt = 1.0 / 2;
+            for (int subStepCount = 0; subStepCount < 4; subStepCount++)
             {
-                Ball *b = &globalBalls.at(i);
-                b->update();
+                for (int i = 0; i < (int)globalBalls.size(); i++)
+                {
+                    Ball *b = &globalBalls.at(i);
+                    b->collision();
+                }
+                for (int i = 0; i < (int)globalBalls.size(); i++)
+                {
+                    Ball *b = &globalBalls.at(i);
+                    b->bounds();
+                }
+                for (int i = 0; i < (int)globalBalls.size(); i++)
+                {
+                    Ball *b = &globalBalls.at(i);
+                    b->update(dt);
+                }
             }
-
         }
 
         // Display the FPS currently
