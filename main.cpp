@@ -12,11 +12,11 @@
 #define getDecimal(x) (x - (int)x)
 #define sgn(x) (x < 0 ? -1 : 1)
 
-#define gravCoef 0.9
-#define dragCoef 0.99
+#define gravCoef 10
+#define dragCoef 0.999
 #define elasticCoef 0.8
 #define collisionCoef 0.4
-float iterAmount = 1;
+#define subSteps 4
 
 using namespace std;
 
@@ -106,22 +106,22 @@ public:
         if (position.x + radius > maxWidth)
         {
             position.x = maxWidth - radius;
-            lastPosition.x = position.x + velocity.x;
+            lastPosition.x = position.x + velocity.x * elasticCoef;
         }
         if (position.x - radius < minWidth)
         {
             position.x = minWidth + radius;
-            lastPosition.x = position.x + velocity.x;
+            lastPosition.x = position.x + velocity.x * elasticCoef;
         }
         if (position.y + radius > maxHeight)
         {
             position.y = maxHeight - radius;
-            lastPosition.y = position.y + velocity.y;
+            lastPosition.y = position.y + velocity.y * elasticCoef;
         }
         if (position.y - radius < minHeight)
         {
             position.y = minHeight + radius;
-            lastPosition.y = position.y + velocity.y;
+            lastPosition.y = position.y + velocity.y * elasticCoef;
         }
     }
 
@@ -207,18 +207,18 @@ int main()
         }
 
         // add balls on mouse press
-        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && GetTime() - lastTime > 0.01)
+        if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
         {
             Vector2 mousePos = GetMousePosition();
             // with velocity of the mouse delta
-            globalBalls.push_back(Ball(mousePos.x, mousePos.y, GetMouseDelta(), 10));
+            globalBalls.push_back(Ball(mousePos.x, mousePos.y, GetMouseDelta()/5, 10));
         }
 
         if (GetTime() - lastTime > 0.01)
         {
             lastTime = GetTime();
-            float dt = 1.0 / 2;
-            for (int subStepCount = 0; subStepCount < 4; subStepCount++)
+            float dt = 1.0 / subSteps;
+            for (int subStepCount = 0; subStepCount < subSteps; subStepCount++)
             {
                 for (int i = 0; i < (int)globalBalls.size(); i++)
                 {
@@ -228,12 +228,13 @@ int main()
                 for (int i = 0; i < (int)globalBalls.size(); i++)
                 {
                     Ball *b = &globalBalls.at(i);
-                    b->bounds();
+                    b->update(dt);
                 }
+
                 for (int i = 0; i < (int)globalBalls.size(); i++)
                 {
                     Ball *b = &globalBalls.at(i);
-                    b->update(dt);
+                    b->bounds();
                 }
             }
         }
