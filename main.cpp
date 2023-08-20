@@ -12,7 +12,7 @@
 #define HEIGHTGAME 25
 #define toDegree(x) (x * 180.0 / 3.14159)
 #define toRadian(x) (x * 3.14159 / 180.0)
-#define gameFPS 500
+#define gameFPS 60
 #define getDecimal(x) (x - (int)x)
 #define sgn(x) (x < 0 ? -1 : 1)
 
@@ -21,6 +21,7 @@
 #define elasticCoef 0.8
 #define collisionCoef 0.4
 #define subSteps 2
+#define ballCount 5000 
 
 using namespace std;
 
@@ -30,6 +31,9 @@ const int maxWidth = screenWidth;
 const int maxHeight = screenHeight;
 const int minWidth = 0;
 const int minHeight = 0;
+int globalBallsCount = 0; 
+int maxBallsPerGrid = 10;
+
 
 #include "vectorOperators.h"
 
@@ -39,9 +43,13 @@ public:
     Vector2 position;
     Vector2 lastPosition;
     Vector2 velocity;
-    const Vector2 acceleration = {0, 0.1};
-    const float radius;
-    const Color col = RED;
+    Vector2 acceleration = {0, 0.1};
+    float radius;
+    Color col = RED;
+
+    Ball(){
+
+    }
 
     Ball(float x, float y, float radius)
     {
@@ -52,6 +60,12 @@ public:
         this->velocity.y = 0;
         this->lastPosition.x = x;
         this->lastPosition.y = y;
+
+        // Make rainbow balls gradually shift with globalBalls and a sine function
+        int r = (int)(sin(globalBallsCount * 0.01) * 127 + 128);
+        int g = (int)(sin(globalBallsCount * 0.01 + 2) * 127 + 128);
+        int b = (int)(sin(globalBallsCount * 0.01 + 4) * 127 + 128);
+        col = {r, g, b, 255};
     };
 
     Ball(float x, float y, Vector2 vel, float radius)
@@ -115,12 +129,13 @@ public:
     }
 };
 
-vector<Ball> globalBalls;
+Ball globalBalls[ballCount];
 
 void ballCoordToGrid(Ball *b, int *x, int *y);
 
 // The 2d array of the grid
 vector<Ball*> grid[WIDTHGAME][HEIGHTGAME];
+int gridCounts [WIDTHGAME][HEIGHTGAME]; // Will keep track of the number of balls in each grid
 
 /**
  *  @brief Collision function for balls 
@@ -133,10 +148,6 @@ void Ball::collision(int debug = 0)
     ballCoordToGrid(this, &x, &y);
     vector<Ball*> closeBalls;
     
-    // [ ][b][ ]
-    // [b][a][b]
-    // [ ][b][ ]
-    // A is the current ball, B is all the grids that have to be looked at 
     for (int i = -1; i <= 1; i++)
     {
         if (x + i >= 0 && x + i < WIDTHGAME)
@@ -217,9 +228,9 @@ void updateGrid(){
         }
     }
     // Push all the necessary balls into the grid
-    for (int i = 0; i < (int)globalBalls.size(); i++)
+    for (int i = 0; i < globalBallsCount; i++)
     {
-        Ball *b = &globalBalls.at(i);
+        Ball *b = &globalBalls[i];
         int x;
         int y;
         ballCoordToGrid(b, &x, &y);
@@ -237,6 +248,7 @@ void drawGrid (){
         }
     }
 }
+
 
 // Main function
 int main()
@@ -277,19 +289,22 @@ int main()
         BeginDrawing();
         ClearBackground(BLACK);
         BeginMode2D(cam);
-        drawGrid(); 
 
-        for (int i = 0; i < (int)globalBalls.size(); i++)
+
+        for (int i = 0; i < globalBallsCount; i++)
         {
-            Ball *b = &globalBalls.at(i);
+            Ball *b = &globalBalls[i];
             b->draw();
         }
 
+
+        Vector2 mousePos = GetMousePosition();
         // Add balls on mouse pressed 
-        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && globalBalls.size() < 2000)
+        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && globalBallsCount < ballCount && mousePos.x > 0 && mousePos.x < maxWidth && mousePos.y > 0 && mousePos.y < maxHeight)
         {
-            Vector2 mousePos = GetMousePosition();
-            globalBalls.push_back(Ball(mousePos.x, mousePos.y, GetMouseDelta()/1, 3));
+            // Array of glboal balls not a vector anymore
+            globalBalls[globalBallsCount] = Ball(mousePos.x, mousePos.y, 10); 
+            globalBallsCount++;
         }
 
         // Update at a constant update rate 
@@ -300,24 +315,23 @@ int main()
             for (int subStepCount = 0; subStepCount < subSteps; subStepCount++)
             {
                 updateGrid(); 
-                for (int i = 0; i < (int)globalBalls.size(); i++)
+                for (int i = 0; i < globalBallsCount; i++)
                 {
-                    Ball *b = &globalBalls.at(i);
+                    Ball *b = &globalBalls[i];
                     b->collision();
                 }
-                for (int i = 0; i < (int)globalBalls.size(); i++)
+                for (int i = 0; i < globalBallsCount; i++)
                 {
-                    Ball *b = &globalBalls.at(i);
+                    Ball *b = &globalBalls[i];
                     b->update(dt);
                 }
-                for (int i = 0; i < (int)globalBalls.size(); i++)
+                for (int i = 0; i < globalBallsCount; i++)
                 {
-                    Ball *b = &globalBalls.at(i);
+                    Ball *b = &globalBalls[i];
                     b->bounds();
                 }
             }
         }
-
         EndMode2D();
 
         // Display the FPS currently
