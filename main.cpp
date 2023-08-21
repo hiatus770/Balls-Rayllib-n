@@ -8,11 +8,12 @@
 #include <vector>
 #include <array>
 #include <rlgl.h>
-#define WIDTHGAME 25
-#define HEIGHTGAME 25
+#include <thread> 
+#define WIDTHGAME 100
+#define HEIGHTGAME 100
 #define toDegree(x) (x * 180.0 / 3.14159)
 #define toRadian(x) (x * 3.14159 / 180.0)
-#define gameFPS 60
+#define gameFPS 120
 #define getDecimal(x) (x - (int)x)
 #define sgn(x) (x < 0 ? -1 : 1)
 
@@ -25,14 +26,14 @@
 
 using namespace std;
 
-const int screenWidth = 800;
-const int screenHeight = 800;
+const int screenWidth = 1000;
+const int screenHeight = 1000;
 const int maxWidth = screenWidth;
 const int maxHeight = screenHeight;
 const int minWidth = 0;
 const int minHeight = 0;
 int globalBallsCount = 0; 
-int maxBallsPerGrid = 10;
+const int maxBallsPerGrid = 10;
 
 
 #include "vectorOperators.h"
@@ -76,6 +77,10 @@ public:
         this->velocity = vel;
         this->lastPosition.x = x - vel.x;
         this->lastPosition.y = y - vel.y;
+        int r = (int)(sin(globalBallsCount * 0.01) * 127 + 128);
+        int g = (int)(sin(globalBallsCount * 0.01 + 2) * 127 + 128);
+        int b = (int)(sin(globalBallsCount * 0.01 + 4) * 127 + 128);
+        col = {r, g, b, 255};
     };
 
     void update(float dt)
@@ -134,7 +139,7 @@ Ball globalBalls[ballCount];
 void ballCoordToGrid(Ball *b, int *x, int *y);
 
 // The 2d array of the grid
-vector<Ball*> grid[WIDTHGAME][HEIGHTGAME];
+Ball* grid[WIDTHGAME][HEIGHTGAME][maxBallsPerGrid];
 int gridCounts [WIDTHGAME][HEIGHTGAME]; // Will keep track of the number of balls in each grid
 
 /**
@@ -156,9 +161,9 @@ void Ball::collision(int debug = 0)
             {
                 if (y + j >= 0 && y + j < HEIGHTGAME)
                 {
-                    for (int k = 0; k < (int)grid[x + i][y + j].size(); k++)
+                    for (int k = 0; k < gridCounts[x + i][y + j]; k++)
                     {
-                        closeBalls.push_back(grid[x + i][y + j].at(k));
+                        closeBalls.push_back(grid[x + i][y + j][k]);
                     }
                 }
             }
@@ -208,6 +213,22 @@ void Ball::collision(int debug = 0)
     }
 }
 
+void UpdateBallPositionsRange(int start, int end, float dt){
+    for (int i = start; i < end; i++)
+    {
+        Ball *b = &globalBalls[i];
+        b->update(dt);
+    }
+}
+
+void CollideBallPositionsRange(int start, int end, int debug){
+    for (int i = start; i < end; i++)
+    {
+        Ball *b = &globalBalls[i];
+        b->collision(debug);
+    }
+}
+
 void ballCoordToGrid(Ball *b, int *x, int *y)
 {
     *x = (int)(b->position.x / (maxWidth / WIDTHGAME));
@@ -224,7 +245,8 @@ void updateGrid(){
     {
         for (int j = 0; j < HEIGHTGAME; j++)
         {
-            grid[i][j].clear();
+            grid[i][j][0] = NULL;
+            gridCounts[i][j] = 0;
         }
     }
     // Push all the necessary balls into the grid
@@ -234,7 +256,8 @@ void updateGrid(){
         int x;
         int y;
         ballCoordToGrid(b, &x, &y);
-        grid[x][y].push_back(b);
+        grid[x][y][gridCounts[x][y]] = b;
+        gridCounts[x][y]++;
     }
 }
 
@@ -248,7 +271,6 @@ void drawGrid (){
         }
     }
 }
-
 
 // Main function
 int main()
@@ -264,9 +286,14 @@ int main()
 
     // test ball
 
+    float computationTime = 0;
+    float drawTime = 0;
+    float lastComputationTime = 0;
+    float lastDrawTime = 0; 
+
     while (WindowShouldClose() == false)
     {
-
+        
         // Mouse zoom stuff 
         if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)){
             Vector2 delta = GetMouseDelta();
@@ -285,31 +312,45 @@ int main()
                 cam.zoom = 0.1f;
         }
 
+        drawTime = GetTime();
         // Drawing begins here 
         BeginDrawing();
         ClearBackground(BLACK);
         BeginMode2D(cam);
-
-
         for (int i = 0; i < globalBallsCount; i++)
         {
             Ball *b = &globalBalls[i];
-            b->draw();
+            // draw last 10 obejcts for testing
+            DrawCircleV(b->position, b->radius, b->col);
+
         }
-
-
+        EndMode2D();
+        drawTime = GetTime() - drawTime;
+        lastDrawTime = drawTime;
+        
+        // Display the FPS currently
+        DrawFPS(10, 10);
+        // Draw ball count
+        DrawText(TextFormat("Ball Count: %d", globalBallsCount), 10, 30, 10, WHITE); 
+        DrawText(TextFormat("Computation Time: %f", lastComputationTime), 10, 50, 10, WHITE);
+        DrawText(TextFormat("Draw Time: %f", lastDrawTime), 10, 70, 10, WHITE);
+        EndDrawing(); 
+        
         Vector2 mousePos = GetMousePosition();
         // Add balls on mouse pressed 
-        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && globalBallsCount < ballCount && mousePos.x > 0 && mousePos.x < maxWidth && mousePos.y > 0 && mousePos.y < maxHeight)
+        if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && globalBallsCount < ballCount && mousePos.x > 0 && mousePos.x < maxWidth && mousePos.y > 0 && mousePos.y < maxHeight && GetTime() - lastTime > 0.001) 
         {
             // Array of glboal balls not a vector anymore
-            globalBalls[globalBallsCount] = Ball(mousePos.x, mousePos.y, 10); 
+            globalBalls[globalBallsCount] = Ball(100, 100, {10, 1}, 5); 
             globalBallsCount++;
         }
 
+        
         // Update at a constant update rate 
-        if (GetTime() - lastTime > 0.01)
+        if (GetTime() - lastTime > 0.001)
         {
+        
+            computationTime = GetTime();
             lastTime = GetTime();
             float dt = 1.0 / subSteps;
             for (int subStepCount = 0; subStepCount < subSteps; subStepCount++)
@@ -331,12 +372,10 @@ int main()
                     b->bounds();
                 }
             }
+            computationTime = GetTime() - computationTime;
+            lastComputationTime = computationTime;
         }
-        EndMode2D();
 
-        // Display the FPS currently
-        DrawFPS(10, 10);
-        EndDrawing();
     }
     CloseWindow();
     return 0;
